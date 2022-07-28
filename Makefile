@@ -1,47 +1,49 @@
+include mk/common.mk
+
 CC ?= gcc
 CFLAGS = -O2
 CFLAGS += -Wall -std=gnu99
 CFLAGS += -g
+LDFLAGS = -lpthread
 
 OUT ?= build
 BIN = $(OUT)/kvm-host
 
 all: $(BIN)
 
-# Control the build verbosity
-ifeq ("$(VERBOSE)","1")
-    Q :=
-    VECHO = @true
-else
-    Q := @
-    VECHO = @printf
-endif
-
-OBJS := kvm-host.o
+OBJS := \
+	vm.o \
+	serial.o \
+	pci.o \
+	virtio-pci.o \
+	virtq.o \
+	virtio-blk.o \
+	diskimg.o \
+	main.o
 OBJS := $(addprefix $(OUT)/,$(OBJS))
 deps := $(OBJS:%.o=%.o.d)
 
 $(BIN): $(OBJS)
 	$(VECHO) "  LD\t$@\n"
-	$(Q)$(CC) $(LDFLAGS) -o $@ $^
+	$(Q)$(CC) $(LDFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(OUT)/%.o: %.c
-	@mkdir -p $(OUT)
+$(OUT)/%.o: src/%.c
+	$(Q)mkdir -p $(OUT)
 	$(VECHO) "  CC\t$@\n"
 	$(Q)$(CC) -o $@ $(CFLAGS) -c -MMD -MF $@.d $<
 
-$(OUT)/bzImage:
-	$(VECHO) "Download and build Linux kernel. Be patient!\n"
-	$(Q)scripts/build-linux-image.sh
+# Rules for downloading and building the minimal Linux system
+include mk/external.mk
 
-check: $(BIN) build/bzImage
-	$(VECHO) "\nOnce the message 'Kernel panic' appears, press ctrl-c to exit\n"
-	sudo ./$^
+check: $(BIN) $(LINUX_IMG) $(ROOTFS_IMG)
+	$(VECHO) "\nOnce the message 'Kernel panic' appears, press Ctrl-C to exit\n\n"
+	$(Q)sudo $(BIN) -k $(LINUX_IMG) -i $(ROOTFS_IMG)
 
 clean:
-	rm -f $(OBJS) $(deps) $(BIN)
+	$(VECHO) "Cleaning...\n"
+	$(Q)rm -f $(OBJS) $(deps) $(BIN)
 
 distclean: clean
-	rm -rf build
+	$(Q)rm -rf build
 
 -include $(deps)
